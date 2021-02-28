@@ -11,9 +11,13 @@ This is my report for the project.
 
 *Implement the method "matchBoundingBoxes", which takes as input both the previous and the current data frames and provides as output the ids of the matched regions of interest (i.e. the boxID property). Matches must be the ones with the highest number of keypoint correspondences.*
 
+I used a OpenCV `Mat` to store the counts of all the keypoint matches mapping each bounding box pair. To compute these counts I have iterated over all the matches to find all the bounding boxes the two keypoints are contained in and incremented the corresponding matrix value. I then scanned each row of the matrix to find the bounding boxes in the current frame with the maximum amount of keyframes for each bounding box of the previous frame.
+
 ## FP.2 Compute Lidar-based TTC
 
 *Compute the time-to-collision in second for all matched 3D objects using only Lidar measurements from the matched bounding boxes between current and previous frame.*
+
+When viewed from the top-view, the lidar points of the car looks very much aligned, so there is not much difference in the x-coordinate between the first few points (with the exception of the outliers). To remove the effect of the outliers and have a more robust estimation I thus decided to use the 5th point in the sorted sequence of the points instead of the minimum one. I decided to use the fifth since it is large enough to remove the few outliers I saw in the data and it was still small enough to be a good first point of collision. To compute the 5th point I simply used the `std::nth_element` standard function.
 
 ## FP.3 Associate Keypoint Correspondences with Bounding Boxes
 
