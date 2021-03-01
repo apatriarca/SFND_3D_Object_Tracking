@@ -30,8 +30,8 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
         Y = P_rect_xx * R_rect_xx * RT * X;
         cv::Point pt;
         // pixel coordinates
-        pt.x = Y.at<double>(0, 0) / Y.at<double>(2, 0); 
-        pt.y = Y.at<double>(1, 0) / Y.at<double>(2, 0); 
+        pt.x = Y.at<double>(0, 0) / Y.at<double>(2, 0);
+        pt.y = Y.at<double>(1, 0) / Y.at<double>(2, 0);
 
         vector<vector<BoundingBox>::iterator> enclosingBoxes; // pointers to all bounding boxes which enclose the current Lidar point
         for (vector<BoundingBox>::iterator it2 = boundingBoxes.begin(); it2 != boundingBoxes.end(); ++it2)
@@ -53,7 +53,7 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
 
         // check wether point has been enclosed by one or by multiple boxes
         if (enclosingBoxes.size() == 1)
-        { 
+        {
             // add Lidar point to bounding box
             enclosingBoxes[0]->lidarPoints.push_back(*it1);
         }
@@ -61,8 +61,8 @@ void clusterLidarWithROI(std::vector<BoundingBox> &boundingBoxes, std::vector<Li
     } // eof loop over all Lidar points
 }
 
-/* 
-* The show3DObjects() function below can handle different output image sizes, but the text output has been manually tuned to fit the 2000x2000 size. 
+/*
+* The show3DObjects() function below can handle different output image sizes, but the text output has been manually tuned to fit the 2000x2000 size.
 * However, you can make this function work for other sizes too.
 * For instance, to use a 1000x1000 size, adjusting the text positions by dividing them by 2.
 */
@@ -78,7 +78,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         cv::Scalar currColor = cv::Scalar(rng.uniform(0,150), rng.uniform(0, 150), rng.uniform(0, 150));
 
         // plot Lidar points into top view image
-        int top=1e8, left=1e8, bottom=0.0, right=0.0; 
+        int top=1e8, left=1e8, bottom=0.0, right=0.0;
         float xwmin=1e8, ywmin=1e8, ywmax=-1e8;
         for (auto it2 = it1->lidarPoints.begin(); it2 != it1->lidarPoints.end(); ++it2)
         {
@@ -111,7 +111,7 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
         sprintf(str1, "id=%d, #pts=%d", it1->boxID, (int)it1->lidarPoints.size());
         putText(topviewImg, str1, cv::Point2f(left-250, bottom+50), cv::FONT_ITALIC, 2, currColor);
         sprintf(str2, "xmin=%2.2f m, yw=%2.2f m", xwmin, ywmax-ywmin);
-        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);  
+        putText(topviewImg, str2, cv::Point2f(left-250, bottom+125), cv::FONT_ITALIC, 2, currColor);
     }
 
     // plot distance markers
@@ -138,26 +138,131 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
-    // ...
+    const size_t maxValues = 30;
+
+    for (const auto &m : kptMatches)
+    {
+        const auto prevKey = kptsPrev[m.queryIdx];
+        const auto currKey = kptsCurr[m.trainIdx];
+        if (boundingBox.roi.contains(prevKey.pt) && boundingBox.roi.contains(currKey.pt))
+            boundingBox.kptMatches.push_back(m);
+    }
+
+    if (boundingBox.kptMatches.size() > maxValues)
+    {
+        size_t minIndex = (boundingBox.kptMatches.size() - maxValues) / 2;
+        size_t maxIndex = minIndex + maxValues;
+
+        auto comp = [&](const cv::DMatch& m1, const cv::DMatch& m2) {
+            const auto prevKey1 = kptsPrev[m1.queryIdx];
+            const auto currKey1 = kptsCurr[m1.trainIdx];
+            const double d1 = cv::norm(currKey1.pt - prevKey1.pt);
+
+            const auto prevKey2 = kptsPrev[m2.queryIdx];
+            const auto currKey2 = kptsCurr[m2.trainIdx];
+            const double d2 = cv::norm(currKey2.pt - prevKey2.pt);
+
+            return d1 < d2;
+        };
+
+        std::sort(boundingBox.kptMatches.begin(), boundingBox.kptMatches.end(), comp);
+        boundingBox.kptMatches.erase(boundingBox.kptMatches.begin() + maxIndex, boundingBox.kptMatches.end());
+        boundingBox.kptMatches.erase(boundingBox.kptMatches.begin(), boundingBox.kptMatches.begin() + minIndex);
+    }
 }
 
 
 // Compute time-to-collision (TTC) based on keypoint correspondences in successive images
-void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, 
+void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                       std::vector<cv::DMatch> kptMatches, double frameRate, double &TTC, cv::Mat *visImg)
 {
-    // ...
+    double distanceMean = 0.0;
+    double numValues = 0.0;
+    for (auto it1 = kptMatches.begin(); it1 != kptMatches.end(); ++it1)
+    {
+        const auto prevKey1 = kptsPrev[it1->queryIdx];
+        const auto currKey1 = kptsCurr[it1->trainIdx];
+
+        for (auto it2 = it1 + 1; it2 != kptMatches.end(); ++it2)
+        {
+            const auto prevKey2 = kptsPrev[it2->queryIdx];
+            const auto currKey2 = kptsCurr[it2->trainIdx];
+
+            const double prevDist = cv::norm(prevKey2.pt - prevKey1.pt);
+            const double currDist = cv::norm(currKey2.pt - currKey1.pt);
+
+            if (prevDist > std::numeric_limits<double>::epsilon())
+            {
+                distanceMean += currDist / prevDist;
+                numValues++;
+            }
+        }
+    }
+    distanceMean /= numValues;
+
+    const double dt = 1.0 / frameRate;
+    TTC = - dt / (1.0 - distanceMean);
 }
 
 
 void computeTTCLidar(std::vector<LidarPoint> &lidarPointsPrev,
                      std::vector<LidarPoint> &lidarPointsCurr, double frameRate, double &TTC)
 {
-    // ...
+    // I take the 5th point sorted by x instead of the last one to be more robust to outliers
+    const int idx = 5;
+
+    auto comp = [](const LidarPoint& p0, const LidarPoint& p1) { return p0.x < p1.x; };
+    std::nth_element(lidarPointsPrev.begin(), lidarPointsPrev.begin() + idx, lidarPointsPrev.end(), comp);
+    std::nth_element(lidarPointsCurr.begin(), lidarPointsCurr.begin() + idx, lidarPointsCurr.end(), comp);
+
+    // Compute the traveled distance since the last frame and the corresponding velocity
+    const double xPrev = lidarPointsPrev[idx].x;
+    const double xCurr = lidarPointsCurr[idx].x;
+    TTC = xPrev > xCurr ? xCurr / ((xPrev - xCurr) * frameRate) : std::numeric_limits<float>::infinity();
 }
 
 
 void matchBoundingBoxes(std::vector<cv::DMatch> &matches, std::map<int, int> &bbBestMatches, DataFrame &prevFrame, DataFrame &currFrame)
 {
-    // ...
+    const size_t prev_bb_size = prevFrame.boundingBoxes.size();
+    const size_t curr_bb_size = currFrame.boundingBoxes.size();
+
+    cv::Mat table = cv::Mat::zeros(prev_bb_size, curr_bb_size, CV_32S);
+    for (const auto &m : matches)
+    {
+        auto prevKey = prevFrame.keypoints[m.queryIdx];
+        std::vector<size_t> prevKeyBBoxes;
+        for (size_t bb = 0; bb < prev_bb_size; ++bb)
+            if (prevFrame.boundingBoxes[bb].roi.contains(prevKey.pt))
+                prevKeyBBoxes.emplace_back(bb);
+
+        auto currKey = currFrame.keypoints[m.trainIdx];
+        std::vector<size_t> curKeyBBoxes;
+        for (size_t bb = 0; bb < curr_bb_size; ++bb)
+            if (currFrame.boundingBoxes[bb].roi.contains(currKey.pt))
+                curKeyBBoxes.emplace_back(bb);
+
+        for (size_t pb: prevKeyBBoxes)
+            for (size_t cb: curKeyBBoxes)
+                table.at<int32_t>(pb, cb)++;
+    }
+
+    for (size_t i = 0; i < prev_bb_size; ++i)
+    {
+        int32_t *row = table.ptr<int32_t>(i);
+
+        int maxCol = -1;
+        int32_t maxValue = 0;
+        for (size_t j = 0; j < curr_bb_size; ++j)
+        {
+            if (row[j] > maxValue)
+            {
+                maxCol = j;
+                maxValue = row[j];
+            }
+        }
+
+        if (maxCol > 0)
+            bbBestMatches[prevFrame.boundingBoxes[i].boxID] = currFrame.boundingBoxes[maxCol].boxID;
+    }
 }
