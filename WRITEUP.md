@@ -23,14 +23,21 @@ When viewed from the top-view, the lidar points of the car looks very much align
 
 *Prepare the TTC computation based on camera measurements by associating keypoint correspondences to the bounding boxes which enclose them. All matches which satisfy this condition must be added to a vector in the respective bounding box.*
 
+I added to the bounding box data structure all the keypoint correspondences with both keypoints in the bounding box ROI. To make the method more robust to outliers (and make the successive step faster), I decided to limit the amount of matches to a fixed amount (30).
+
 ## FP.4 Compute Camera-based TTC
 
 *Compute the time-to-collision in second for all matched 3D objects using only keypoint correspondences from the matched bounding boxes between current and previous frame.*
+
+I used the method outlined in the lectures to compute the TTC from the camera matches computed in the previous task. I tried both the median and the mean of the distances ratio and found the mean was giving me better results and I thus ended up using that method.
 
 ## FP.5 Performance Evaluation 1
 
 *Find examples where the TTC estimate of the Lidar sensor does not seem plausible. Describe your observations and provide a sound argumentation why you think this happened.*
 
+The Lidar sensor generally gives a relatively good estimation compared to the camera sensor. The main errors are caused by the presence of the outliers and the fact we are computing a velocity between two lidar points that do not correspond to the same point on the car. During the entire sequence there is a problem in the selection of the bounding box to use for the TTC and that causes issues for both methods.
+
 ## FP.6 Performance Evaluation 2
 
 *Run several detector / descriptor combinations and look at the differences in TTC estimation. Find out which methods perform best and also include several examples where camera-based TTC estimation is way off. As with Lidar, describe your observations again and also look into potential reasons.*
+

@@ -138,7 +138,37 @@ void show3DObjects(std::vector<BoundingBox> &boundingBoxes, cv::Size worldSize, 
 // associate a given bounding box with the keypoints it contains
 void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr, std::vector<cv::DMatch> &kptMatches)
 {
-    // ...
+    const size_t maxValues = 30;
+
+    for (const auto &m : kptMatches)
+    {
+        const auto prevKey = kptsPrev[m.queryIdx];
+        const auto currKey = kptsCurr[m.trainIdx];
+        if (boundingBox.roi.contains(prevKey.pt) && boundingBox.roi.contains(currKey.pt))
+            boundingBox.kptMatches.push_back(m);
+    }
+
+    if (boundingBox.kptMatches.size() > maxValues)
+    {
+        size_t minIndex = (boundingBox.kptMatches.size() - maxValues) / 2;
+        size_t maxIndex = minIndex + maxValues;
+
+        auto comp = [&](const cv::DMatch& m1, const cv::DMatch& m2) {
+            const auto prevKey1 = kptsPrev[m1.queryIdx];
+            const auto currKey1 = kptsCurr[m1.trainIdx];
+            const double d1 = cv::norm(currKey1.pt - prevKey1.pt);
+
+            const auto prevKey2 = kptsPrev[m2.queryIdx];
+            const auto currKey2 = kptsCurr[m2.trainIdx];
+            const double d2 = cv::norm(currKey2.pt - prevKey2.pt);
+
+            return d1 < d2;
+        };
+
+        std::sort(boundingBox.kptMatches.begin(), boundingBox.kptMatches.end(), comp);
+        boundingBox.kptMatches.erase(boundingBox.kptMatches.begin() + maxIndex, boundingBox.kptMatches.end());
+        boundingBox.kptMatches.erase(boundingBox.kptMatches.begin(), boundingBox.kptMatches.begin() + minIndex);
+    }
 }
 
 
@@ -146,7 +176,32 @@ void clusterKptMatchesWithROI(BoundingBox &boundingBox, std::vector<cv::KeyPoint
 void computeTTCCamera(std::vector<cv::KeyPoint> &kptsPrev, std::vector<cv::KeyPoint> &kptsCurr,
                       std::vector<cv::DMatch> kptMatches, double frameRate, double &TTC, cv::Mat *visImg)
 {
-    // ...
+    double distanceMean = 0.0;
+    double numValues = 0.0;
+    for (auto it1 = kptMatches.begin(); it1 != kptMatches.end(); ++it1)
+    {
+        const auto prevKey1 = kptsPrev[it1->queryIdx];
+        const auto currKey1 = kptsCurr[it1->trainIdx];
+
+        for (auto it2 = it1 + 1; it2 != kptMatches.end(); ++it2)
+        {
+            const auto prevKey2 = kptsPrev[it2->queryIdx];
+            const auto currKey2 = kptsCurr[it2->trainIdx];
+
+            const double prevDist = cv::norm(prevKey2.pt - prevKey1.pt);
+            const double currDist = cv::norm(currKey2.pt - currKey1.pt);
+
+            if (prevDist > std::numeric_limits<double>::epsilon())
+            {
+                distanceMean += currDist / prevDist;
+                numValues++;
+            }
+        }
+    }
+    distanceMean /= numValues;
+
+    const double dt = 1.0 / frameRate;
+    TTC = - dt / (1.0 - distanceMean);
 }
 
 
