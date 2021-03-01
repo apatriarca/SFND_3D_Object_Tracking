@@ -41,3 +41,6 @@ The Lidar sensor generally gives a relatively good estimation compared to the ca
 
 *Run several detector / descriptor combinations and look at the differences in TTC estimation. Find out which methods perform best and also include several examples where camera-based TTC estimation is way off. As with Lidar, describe your observations again and also look into potential reasons.*
 
+I implemented the methods above using the FAST/BRIEF combination which I found "the best" in my previous exercise. I then tried with the BRISK descriptor and got slightly better results. I then tried SHITOMASI and found it work much better than FAST with most descriptors. Both the BRISK and ORB detector were instead giving me worst results then the FAST one. AKAZE and SIFT are very good but probably mostly on par with SHITOMASI. Considering the performance consideration of the midterm project I think the SHITOMASI/BRIEF is probably a good choice for this task.
+
+All kinds of wrong results can be found using most of the methods, particularly with the BRISK or ORB detectors. I think these detectors does not work well with this method because they retrieve features at different scales and they are often located at very similar locations. In some cases the filtering of the matches seemed to have a negative effect on the performance. I can't say why this was the case however.
